@@ -6,6 +6,8 @@ https://github.com/rrmina/fast-neural-style-pytorch
 
 Only basic inference functionality is ported for now.
 
+![alt text](https://github.com/zeroxoxo/ComfyUI-Fast-Style-Transfer/blob/main/ComfyUI.PNG?raw=true)
+
 If you wanna use custom styles, then clone the original repo and use train.py script, then transfer .pth model file into "ComfyUI/custom_nodes/ComfyUI-Fast-Style-Transfer/models" folder
 
 # Installation
