@@ -143,9 +143,10 @@ class FastStyleTransfer:
 
     def encode_tensor(self, tensor):
         tensor = tensor.permute(0, 3, 1, 2).contiguous()  # Convert to [batch_size, channels, height, width]
-        return tensor * 255
+        return tensor[:, [2, 1, 0], :, :] * 255
 
     def decode_tensor(self, tensor):
+        tensor = tensor[:, [2, 1, 0], :, :]
         tensor = tensor.permute(0, 2, 3, 1).contiguous()  # Convert to [batch_size, height, width, channels]
         return tensor / 255
     
