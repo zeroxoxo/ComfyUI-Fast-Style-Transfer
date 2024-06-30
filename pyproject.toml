@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-fast-style-transfer"
 description = "ComfyUI node for fast neural style transfer. This is a simple conversion based on this: [a/https://github.com/rrmina/fast-neural-style-pytorch](https://github.com/rrmina/fast-neural-style-pytorch)"
-version = "1.0.0"
+version = "1.0.1"
 license = "LICENSE"
 
 [project.urls]
