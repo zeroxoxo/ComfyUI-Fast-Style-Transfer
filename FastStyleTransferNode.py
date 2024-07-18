@@ -18,7 +18,7 @@ import sys
 
 
 class VGG16(nn.Module):
-    def __init__(self, vgg_path=os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\vgg\\vgg16-00b39a1b.pth"), train=False):
+    def __init__(self, vgg_path=os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/vgg/vgg16-00b39a1b.pth"), train=False):
         super(VGG16, self).__init__()
         # Load VGG Skeleton, Pretrained Weights
         vgg16_features = models.vgg16(pretrained=False)
@@ -181,12 +181,12 @@ class TrainFastStyleTransfer:
 
 
     def train(self, style_img, seed, batch_size, train_img_size, learning_rate, num_epochs, content_weight, style_weight, save_model_every):
-        save_model_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\models\\")
-        dataset_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\dataset\\")
-        vgg_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\vgg\\vgg16-00b39a1b.pth")
-        save_image_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\output\\")
+        save_model_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/models/")
+        dataset_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/dataset/")
+        vgg_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/vgg/vgg16-00b39a1b.pth")
+        save_image_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/output/")
         style_image_path = folder_paths.get_annotated_filepath(style_img)
-        train_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\train.py")
+        train_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/train.py")
 
 
         command = [
@@ -222,7 +222,7 @@ class FastStyleTransfer:
         return {
             "required": {
                 "content_img": ("IMAGE",),
-                "model": ([file for file in os.listdir(os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\models\\")) if file.endswith('.pth')], ),
+                "model": ([file for file in os.listdir(os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/models/")) if file.endswith('.pth')], ),
                 },
             }
 
@@ -248,7 +248,7 @@ class FastStyleTransfer:
 
         # Load Transformer Network
         net = TransformerNetwork().to(device)
-        model_path = os.path.join(folder_paths.base_path, "custom_nodes\\ComfyUI-Fast-Style-Transfer\\models\\") + model
+        model_path = os.path.join(folder_paths.base_path, "custom_nodes/ComfyUI-Fast-Style-Transfer/models/") + model
         net.load_state_dict(torch.load(model_path, map_location=device))
         net = net.to(device)
 
