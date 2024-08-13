@@ -7,8 +7,6 @@ import numpy as np
 import time
 import argparse
 import cv2
-import matplotlib.pyplot as plt
-
 
 parser = argparse.ArgumentParser(description="Train a neural network with style transfer.")
 
@@ -16,15 +14,17 @@ parser.add_argument('--train_image_size', type=int, default=256, help='Size of t
 parser.add_argument('--dataset_path', type=str, default="dataset", help='Path to the dataset')
 parser.add_argument('--vgg_path', type=str, default="vgg", help='Path to the vgg model')
 parser.add_argument('--num_epochs', type=int, default=1, help='Number of epochs for training')
-parser.add_argument('--style_image_path', type=str, default="images/oil.jpg", help='Path to the style image')
+parser.add_argument('--temp_save_style_img', type=str, default="temp/temp_save_style_img.pt", help='Path to the style image tensor')
 parser.add_argument('--batch_size', type=int, default=12, help='Batch size for training')
 parser.add_argument('--content_weight', type=float, default=8, help='Weight for content loss')
 parser.add_argument('--style_weight', type=float, default=50, help='Weight for style loss')
+parser.add_argument('--tv_weight', type=float, default=0.001, help='Weight for total variation loss')
 parser.add_argument('--adam_lr', type=float, default=0.001, help='Learning rate for Adam optimizer')
 parser.add_argument('--save_model_path', type=str, default="models/oil/", help='Path to save the trained model')
 parser.add_argument('--save_image_path', type=str, default="images/out/", help='Path to save the output images')
 parser.add_argument('--save_model_every', type=int, default=200, help='Save model every n batches')
 parser.add_argument('--seed', type=int, default=1234, help='Random seed')
+parser.add_argument('--pretrained_model', type=str, default='none', help='pretrained model')
 
 args = parser.parse_args()
 
@@ -32,88 +32,33 @@ args = parser.parse_args()
 TRAIN_IMAGE_SIZE = args.train_image_size
 DATASET_PATH = args.dataset_path
 NUM_EPOCHS = args.num_epochs
-STYLE_IMAGE_PATH = args.style_image_path
+STYLE_IMAGE_PATH = args.temp_save_style_img
 VGG_PATH = args.vgg_path
 BATCH_SIZE = args.batch_size
 CONTENT_WEIGHT = args.content_weight
 STYLE_WEIGHT = args.style_weight
+TV_WEIGHT = args.tv_weight
 ADAM_LR = args.adam_lr
 SAVE_MODEL_PATH = args.save_model_path
 SAVE_IMAGE_PATH = args.save_image_path
 SAVE_MODEL_EVERY = args.save_model_every
 SEED = args.seed
-PLOT_LOSS = 1
+MODEL = args.pretrained_model
 
 # Utils
-
-def plot_loss_hist(c_loss, s_loss, total_loss, title="Loss History"):
-    x = [i for i in range(len(total_loss))]
-    plt.figure(figsize=[10, 6])
-    plt.plot(x, c_loss, label="Content Loss")
-    plt.plot(x, s_loss, label="Style Loss")
-    plt.plot(x, total_loss, label="Total Loss")
-    
-    plt.legend()
-    plt.xlabel('Every 500 iterations')
-    plt.ylabel('Loss')
-    plt.title(title)
-    plt.show()
-
 # Gram Matrix
 def gram(tensor):
     B, C, H, W = tensor.shape
     x = tensor.view(B, C, H*W)
     x_t = x.transpose(1, 2)
-    return  torch.bmm(x, x_t) / (C*H*W)
+    gram_matrix = torch.bmm(x, x_t) / (C*H*W)
+    gram_matrix = torch.clamp(gram_matrix, min=1e-6, max=1e6)
+    return gram_matrix
 
-# Load image file
-def load_image(path):
-    # Images loaded as BGR
-    img = cv2.imread(path)
-    return img
-
-# Show image
-def show(img):
-    # Convert from BGR to RGB
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    
-    # imshow() only accepts float [0,1] or int [0,255]
-    img = np.array(img/255).clip(0,1)
-    
-    plt.figure(figsize=(10, 5))
-    plt.imshow(img)
-    plt.show()
-
-
+# Save image
 def saveimg(img, image_path):
     img = img.clip(0, 255)
     cv2.imwrite(image_path, img)
-
-# Preprocessing ~ Image to Tensor
-def itot(img, max_size=None):
-    # Rescale the image
-    if (max_size==None):
-        itot_t = transforms.Compose([
-            #transforms.ToPILImage(),
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.mul(255))
-        ])    
-    else:
-        H, W, C = img.shape
-        image_size = tuple([int((float(max_size) / max([H,W]))*x) for x in [H, W]])
-        itot_t = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.Resize(image_size),
-            transforms.ToTensor(),
-            transforms.Lambda(lambda x: x.mul(255))
-        ])
-
-    # Convert image to tensor
-    tensor = itot_t(img)
-
-    # Add the batch_size dimension
-    tensor = tensor.unsqueeze(dim=0)
-    return tensor
 
 # Preprocessing ~ Tensor to Image
 def ttoi(tensor):
@@ -129,6 +74,11 @@ def ttoi(tensor):
     # Transpose from [C, H, W] -> [H, W, C]
     img = img.transpose(1, 2, 0)
     return img
+
+# Alternative loss functions experiments
+def total_variation(y):
+    return torch.sum(torch.abs(y[:, :, :, :-1] - y[:, :, :, 1:])) + \
+           torch.sum(torch.abs(y[:, :, :-1, :] - y[:, :, 1:, :]))
 
 # VGG
 class VGG16(nn.Module):
@@ -164,11 +114,11 @@ class TransformerNetworkClass(nn.Module):
     def __init__(self):
         super(TransformerNetworkClass, self).__init__()
         self.ConvBlock = nn.Sequential(
-            ConvLayer(3, 32, 9, 1),
+            ConvolutionalLayer(3, 32, 9, 1),
             nn.ReLU(),
-            ConvLayer(32, 64, 3, 2),
+            ConvolutionalLayer(32, 64, 3, 2),
             nn.ReLU(),
-            ConvLayer(64, 128, 3, 2),
+            ConvolutionalLayer(64, 128, 3, 2),
             nn.ReLU()
         )
         self.ResidualBlock = nn.Sequential(
@@ -179,11 +129,11 @@ class TransformerNetworkClass(nn.Module):
             ResidualLayer(128, 3)
         )
         self.DeconvBlock = nn.Sequential(
-            DeconvLayer(128, 64, 3, 2, 1),
+            DeconvolutionalLayer(128, 64, 3, 2, 1),
             nn.ReLU(),
-            DeconvLayer(64, 32, 3, 2, 1),
+            DeconvolutionalLayer(64, 32, 3, 2, 1),
             nn.ReLU(),
-            ConvLayer(32, 3, 9, 1, norm="None")
+            ConvolutionalLayer(32, 3, 9, 1, norm="None")
         )
 
     def forward(self, x):
@@ -192,9 +142,9 @@ class TransformerNetworkClass(nn.Module):
         out = self.DeconvBlock(x)
         return out
 
-class ConvLayer(nn.Module):
+class ConvolutionalLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, norm="instance"):
-        super(ConvLayer, self).__init__()
+        super(ConvolutionalLayer, self).__init__()
         # Padding Layers
         padding_size = kernel_size // 2
         self.reflection_pad = nn.ReflectionPad2d(padding_size)
@@ -204,6 +154,7 @@ class ConvLayer(nn.Module):
 
         # Normalization Layers
         self.norm_type = norm
+
         if (norm=="instance"):
             self.norm_layer = nn.InstanceNorm2d(out_channels, affine=True)
         elif (norm=="batch"):
@@ -226,9 +177,9 @@ class ResidualLayer(nn.Module):
     """
     def __init__(self, channels=128, kernel_size=3):
         super(ResidualLayer, self).__init__()
-        self.conv1 = ConvLayer(channels, channels, kernel_size, stride=1)
+        self.conv1 = ConvolutionalLayer(channels, channels, kernel_size, stride=1)
         self.relu = nn.ReLU()
-        self.conv2 = ConvLayer(channels, channels, kernel_size, stride=1)
+        self.conv2 = ConvolutionalLayer(channels, channels, kernel_size, stride=1)
 
     def forward(self, x):
         identity = x                     # preserve residual
@@ -237,9 +188,9 @@ class ResidualLayer(nn.Module):
         out = out + identity             # add residual
         return out
 
-class DeconvLayer(nn.Module):
+class DeconvolutionalLayer(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, output_padding, norm="instance"):
-        super(DeconvLayer, self).__init__()
+        super(DeconvolutionalLayer, self).__init__()
 
         # Transposed Convolution 
         padding_size = kernel_size // 2
@@ -247,6 +198,7 @@ class DeconvLayer(nn.Module):
 
         # Normalization Layers
         self.norm_type = norm
+
         if (norm=="instance"):
             self.norm_layer = nn.InstanceNorm2d(out_channels, affine=True)
         elif (norm=="batch"):
@@ -261,8 +213,8 @@ class DeconvLayer(nn.Module):
         return out
 
 
-
 def train():
+
     # Seeds
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED)
@@ -286,15 +238,16 @@ def train():
 
     # Load networks
     TransformerNetwork = TransformerNetworkClass().to(device)
+    if MODEL != 'none':
+        model_path = SAVE_MODEL_PATH + MODEL
+        print(f"Loading {model_path} model")
+        TransformerNetwork.load_state_dict(torch.load(model_path, map_location=device))
+        TransformerNetwork.to(device)
     VGG = VGG16(vgg_path=VGG_PATH).to(device)
 
     # Get Style Features
     imagenet_neg_mean = torch.tensor([-103.939, -116.779, -123.68], dtype=torch.float32).reshape(1,3,1,1).to(device)
-    print(f"Train.py: style image path: {STYLE_IMAGE_PATH}")
-    style_image = load_image(STYLE_IMAGE_PATH)
-    print(f"Train.py: style image type: {type(style_image)}")
-    style_tensor = itot(style_image).to(device)
-    print(f"Train.py: style tensor type: {type(style_tensor)}")
+    style_tensor = torch.load(STYLE_IMAGE_PATH).to(device)
     style_tensor = style_tensor.add(imagenet_neg_mean)
     B, C, H, W = style_tensor.shape
     style_features = VGG(style_tensor.expand([BATCH_SIZE, C, H, W]))
@@ -304,7 +257,7 @@ def train():
 
     # Optimizer settings
     optimizer = optim.AdamW(TransformerNetwork.parameters(), lr=ADAM_LR, fused=True, amsgrad=True)
-
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=20, T_mult=2, eta_min=1e-6, last_epoch=-1)
     # Loss trackers
     content_loss_history = []
     style_loss_history = []
@@ -312,22 +265,13 @@ def train():
     batch_content_loss_sum = 0
     batch_style_loss_sum = 0
     batch_total_loss_sum = 0
-
     # Optimization/Training Loop
-    batch_count = 1
     start_time = time.time()
     for epoch in range(NUM_EPOCHS):
         print("========Epoch {}/{}========".format(epoch+1, NUM_EPOCHS))
-        for content_batch, _ in train_loader:
-            # Get current batch size in case of odd batch sizes
-            curr_batch_size = content_batch.shape[0]
-
-            # Free-up unneeded cuda memory
-            torch.cuda.empty_cache()
-
-            # Zero-out Gradients
+        for batch_count, (content_batch, _) in enumerate(train_loader):
             optimizer.zero_grad()
-
+            torch.cuda.empty_cache()
             # Generate images and get features
             content_batch = content_batch[:,[2,1,0]].to(device)
             generated_batch = TransformerNetwork(content_batch)
@@ -336,55 +280,63 @@ def train():
 
             # Content Loss
             MSELoss = nn.MSELoss().to(device)
-            content_loss = CONTENT_WEIGHT * MSELoss(generated_features['relu2_2'], content_features['relu2_2'])            
+            MAELoss = nn.L1Loss().to(device)
+            content_loss = CONTENT_WEIGHT * MSELoss(generated_features['relu2_2'], content_features['relu2_2']) + MAELoss(generated_features['relu2_2'], content_features['relu2_2']) / 2
             batch_content_loss_sum += content_loss
 
             # Style Loss
-            style_loss = 0
+            style_loss = 0.0
             for key, value in generated_features.items():
-                s_loss = MSELoss(gram(value), style_gram[key][:curr_batch_size])
-                style_loss += s_loss
-            style_loss *= STYLE_WEIGHT
+                style_loss += MSELoss(gram(value), style_gram[key][:content_batch.shape[0]])
+                style_loss += MAELoss(gram(value), style_gram[key][:content_batch.shape[0]])
+            style_loss *= STYLE_WEIGHT/2
             batch_style_loss_sum += style_loss.item()
 
-            # Total Loss
-            total_loss = content_loss + style_loss
-            batch_total_loss_sum += total_loss.item()
+            # TV loss
+            tv_loss = total_variation(generated_batch) * TV_WEIGHT
 
-            # Backprop and Weight Update
+            # Total Loss
+            total_loss = content_loss + style_loss + tv_loss
+            batch_total_loss_sum += total_loss.item()
+            
             total_loss.backward()
             optimizer.step()
+            if batch_count % 50 == 0:
+                scheduler.step()
+
+            with torch.no_grad():
+                print(f'AdamW | iteration: {batch_count+1:03}, total loss={total_loss.item():12.4f}, content_loss={content_loss.item():12.4f}, style loss={style_loss.item():12.4f}, tv loss={tv_loss.item():12.4f}')
 
             # Save Model and Print Losses
-            if (((batch_count-1)%SAVE_MODEL_EVERY == 0) or (batch_count==NUM_EPOCHS*len(train_loader))):
+            if (((batch_count)%SAVE_MODEL_EVERY == 0) or ((batch_count+1)==NUM_EPOCHS*len(train_loader))):
                 # Print Losses
-                print("========Iteration {}/{}========".format(batch_count, NUM_EPOCHS*len(train_loader)))
-                print("\tContent Loss:\t{:.2f}".format(batch_content_loss_sum/batch_count))
-                print("\tStyle Loss:\t{:.2f}".format(batch_style_loss_sum/batch_count))
-                print("\tTotal Loss:\t{:.2f}".format(batch_total_loss_sum/batch_count))
+                print("========Iteration {}/{}========".format(batch_count+1, NUM_EPOCHS*len(train_loader)))
+                print("\tContent Loss:\t{:.2f}".format(batch_content_loss_sum/(batch_count+1)))
+                print("\tStyle Loss:\t{:.2f}".format(batch_style_loss_sum/(batch_count+1)))
+                print("\tTotal Loss:\t{:.2f}".format(batch_total_loss_sum/(batch_count+1)))
                 print("Time elapsed:\t{} seconds".format(time.time()-start_time))
 
                 # Save Model
-                checkpoint_path = SAVE_MODEL_PATH + "checkpoint_" + str(batch_count-1) + ".pth"
+                checkpoint_path = SAVE_MODEL_PATH + "checkpoint_" + str((batch_count+1)) + ".pth"
                 torch.save(TransformerNetwork.state_dict(), checkpoint_path)
                 print("Saved TransformerNetwork checkpoint file at {}".format(checkpoint_path))
 
                 # Save sample generated image
                 sample_tensor = generated_batch[0].clone().detach().unsqueeze(dim=0)
                 sample_image = ttoi(sample_tensor.clone().detach())
-                sample_image_path = SAVE_IMAGE_PATH + "sample0_" + str(batch_count-1) + ".png"
+                sample_image_path = SAVE_IMAGE_PATH + "sample0_" + str((batch_count+1)) + ".png"
                 saveimg(sample_image, sample_image_path)
                 print("Saved sample tranformed image at {}".format(sample_image_path))
 
                 # Save loss histories
-                content_loss_history.append(batch_content_loss_sum/batch_count)
-                style_loss_history.append(batch_style_loss_sum/batch_count)
-                total_loss_history.append(batch_total_loss_sum/batch_count)
+                content_loss_history.append(batch_content_loss_sum/(batch_count+1))
+                style_loss_history.append(batch_style_loss_sum/(batch_count+1))
+                total_loss_history.append(batch_total_loss_sum/(batch_count+1))
 
-            # Iterate Batch Counter
-            batch_count+=1
-            if batch_count%10 == 0:
-                print(f"Batch count is {batch_count}")
+            
+
+                
+
 
     stop_time = time.time()
     # Print loss histories
@@ -397,17 +349,7 @@ def train():
     print("========Total Loss========")
     print(total_loss_history) 
 
-    # Save TransformerNetwork weights
-    TransformerNetwork.eval()
-    TransformerNetwork.cpu()
-    final_path = SAVE_MODEL_PATH + "transformer_weight.pth"
-    print("Saving TransformerNetwork weights at {}".format(final_path))
-    torch.save(TransformerNetwork.state_dict(), final_path)
-    print("Done saving final model")
-
-    # Plot Loss Histories
-    if (PLOT_LOSS):
-        plot_loss_hist(content_loss_history, style_loss_history, total_loss_history)
 
 if __name__ == "__main__":
     train()
+
