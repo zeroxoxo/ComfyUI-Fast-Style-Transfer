@@ -3,18 +3,19 @@ ComfyUI node for fast neural style transfer.
 
 This is a simple conversion based on this:
 https://github.com/rrmina/fast-neural-style-pytorch
+[Experimental]
+Also ported regular neural style transfer from here:
+https://github.com/gordicaleksa/pytorch-neural-style-transfer
+But it's much slower and not that useful but you can play with it if you want
 
-Only basic inference functionality is ported for now.
-
-![alt text](https://github.com/zeroxoxo/ComfyUI-Fast-Style-Transfer/blob/main/ComfyUI.PNG?raw=true)
-
-If you wanna use custom styles, then clone the original repo and use train.py script, then transfer .pth model file into "ComfyUI/custom_nodes/ComfyUI-Fast-Style-Transfer/models" folder
+![alt text](https://github.com/zeroxoxo/ComfyUI-Fast-Style-Transfer/blob/main/FST_preview.PNG?raw=true)
 
 # Installation
 
 Probably the usual. Just "git clone https://github.com/zeroxoxo/ComfyUI-Fast-Style-Transfer.git" into your custom_nodes folder. That should be it.
 
 If it doesn't work then idk, ask stack exchange or something, how should I know what's wrong with your setup?
+I use portable setup of ComfyUI so if it doesn't work try it with portable version
 
 # Training
 
@@ -42,14 +43,18 @@ That's it for downloads.
 
 Now just use ComfyUI to load TrainFastStyleTransfer node.
 
-To select style picture load "load_image" node, load image inside of it, then press f5, now the image should be in style_img list inside of TrainFastStyleTransfer node, select it.
+To select style picture load "load_image" node and connect it with the TFST node.
 
-Adjust batch_size as high as you can with your vram. On my 2060 setup I got 5.9 Gb vram usage running batch_size = 12 ("nvidia-smi" command can be used in cmd to check current vram usage). If you have more you can crank it higher to drastically reduce training time.
+Default content_weight, style_weight and tv_weight should be good starting points. Increase style_weight if you need more style, tv_weight affects sharpness of style features, needs experimenting but seems to be very useful in controlling how style applies to the image.
 
-One epoch should be fine, but you can test more on your own if your setup is fast enough or you have spare time.
+Adjusting batch_size as high as you can with your vram doesn't seem to do much. So just use default 4 with img_size of 256.
+
+You probably won't need to wait for whole epoch either, just train until total loss stops getting reliably lower and just fluctuates around the same ballpark.
+
+Use one of the pretrained models as a starting point, helps to reduce training time drastically.
 
 save_model_every will save model and produce test picture every n-th step of training.
 
-After setting all parameters just queue prompt and wait until training is done. Training a model can take up to 2 hours, so have patience.
+After setting all parameters just queue prompt and don't wait until training is done. Set save_model_every to a low value like 100 or 200 and look at pictures it produces (intermediate pictures saved in outputs folder). Starting with pretrained model should produce good enough model in less than 2000 training steps. As soon as you're fine with the result just close the training script.
 
-All intermediate and final models will be saved in models folder, test them, delete redundant and rename the one you like.
+All intermediate models will be saved in models folder, test them, delete redundant and rename the one you like.
