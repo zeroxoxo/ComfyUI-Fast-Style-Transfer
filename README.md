@@ -3,6 +3,7 @@ ComfyUI node for fast neural style transfer.
 
 This is a simple conversion based on this:
 https://github.com/rrmina/fast-neural-style-pytorch
+
 [Experimental]
 Also ported regular neural style transfer from here:
 https://github.com/gordicaleksa/pytorch-neural-style-transfer
